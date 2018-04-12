@@ -1,6 +1,7 @@
 import time
 import docker
 import sys
+import progress.bar
 
 
 class Service():
@@ -40,11 +41,17 @@ def main(stack_name):
         Service(x) for x in client.services.list() if x.name.startswith(stack_name + "_")
     ]
 
+    bar = progress.bar.Bar("Deploying", max=len(services))
+
     while True:
         for s in services:
             s.update()
 
+        bar.index = len(list(filter(lambda x: x.is_complete(), services)))
+        bar.update()
+
         if all([s.is_complete() for s in services]):
+            print()
             for s in services:
                 print("{} - {}".format(s.name, s.get_state()))
 
