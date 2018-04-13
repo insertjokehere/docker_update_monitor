@@ -51,7 +51,7 @@ def main(stack_name):
         bar.update()
 
         if all([s.is_complete() for s in services]):
-            self.finish()
+            bar.finish()
             for s in services:
                 print("{} - {}".format(s.name, s.get_state()))
 
