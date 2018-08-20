@@ -1,6 +1,7 @@
 import time
 import docker
 import sys
+import subprocess
 import progress.bar
 
 
@@ -56,9 +57,38 @@ class Service():
 def main(stack_name):
     client = docker.from_env()
 
-    # TODO: Fetch stack members via docker API
+    # Docker Python API doesn't seem to support listing services and stacks, so we have to do
+    # some nasty shell parsing
+
+    try:
+        output = subprocess.check_output([
+            '/usr/bin/docker',
+            'stack', 'list',
+            '--format', '{{.Name}}'
+        ])
+    except subprocess.CalledProcessError:
+        print("Cannot list stacks")
+        print(output)
+        exit(1)
+
+    if stack_name not in output.decode('utf-8').split('\n'):
+        print("Stack {} not found".format(stack_name))
+
+    try:
+        output = subprocess.check_output([
+            '/usr/bin/docker',
+            'stack', 'services', stack_name,
+            '--format', '{{.Name}}'
+        ])
+    except subprocess.CalledProcessError:
+        print("Cannot find services for stack {}".format(stack_name))
+        print(output)
+        exit(1)
+
+    service_names = output.decode('utf-8').split('\n')
+
     services = [
-        Service(x) for x in client.services.list() if x.name.startswith(stack_name + "_") or x.name == stack_name
+        Service(x) for x in client.services.list() if x.name in service_names
     ]
 
     bar = progress.bar.Bar("Deploying", max=len(services))
