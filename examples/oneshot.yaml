@@ -1,0 +1,27 @@
+version: '3.4'
+services:
+
+  ping:
+    image: busybox
+    command:
+      - "ping"
+      - "8.8.8.8"
+      - "-c"
+      - "20"
+    deploy:
+      restart_policy:
+        condition: none
+      labels:
+        - "monitor_hint=oneshot"
+
+  badtask:
+    image: busybox
+    command:
+      - "sh"
+      - "-c"
+      - "sleep 20; exit 1"
+    deploy:
+      restart_policy:
+        condition: none
+      labels:
+        - "monitor_hint=oneshot"

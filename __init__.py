@@ -8,6 +8,9 @@ class Service():
 
     def __init__(self, service):
         self._service = service
+        # If the service has a 'monitor_hint' label of 'oneshot', then instead of waiting for the update state
+        # to be OK, we should wait for the container to exit with status of 0
+        self._oneshot_mode = self._service.attrs['Spec'].get('Labels', {}).get('monitor_hint', '') == 'oneshot'
 
     @property
     def name(self):
@@ -17,13 +20,22 @@ class Service():
         self._service.reload()
 
     def get_state(self):
-        if 'UpdateStatus' in self._service.attrs:
-            return "{} ({})".format(self._service.attrs['UpdateStatus']['State'], self._service.attrs['UpdateStatus']['Message'])
+        if self._oneshot_mode:
+            task = self._service.tasks()[0]
+            state = task['Status']['State']
+            if 'Err' in task['Status']:
+                state += " ({})".format(task['Status']['Err'])
+            return state
         else:
-            return "No Update In Progress"
+            if 'UpdateStatus' in self._service.attrs:
+                return "{} ({})".format(self._service.attrs['UpdateStatus']['State'], self._service.attrs['UpdateStatus']['Message'])
+            else:
+                return "No Update In Progress"
 
     def is_complete(self):
-        if 'UpdateStatus' not in self._service.attrs:
+        if self._oneshot_mode:
+            return self._service.tasks()[0]['DesiredState'] == 'shutdown'
+        elif 'UpdateStatus' not in self._service.attrs:
             return True
         elif self._service.attrs['UpdateStatus']['State'] in ['completed', 'paused']:
             return True
@@ -32,13 +44,21 @@ class Service():
 
     @property
     def success(self):
-        return 'UpdateStatus' not in self._service.attrs or self._service.attrs['UpdateStatus']['State'] in ['completed']
+        if self._oneshot_mode:
+            task = self._service.tasks()[0]
+            return 'ContainerStatus' in task['Status'] and \
+                'ExitCode' in task['Status']['ContainerStatus'] and \
+                task['Status']['ContainerStatus']['ExitCode'] == 0
+        else:
+            return 'UpdateStatus' not in self._service.attrs or self._service.attrs['UpdateStatus']['State'] in ['completed']
 
 
 def main(stack_name):
     client = docker.from_env()
+
+    # TODO: Fetch stack members via docker API
     services = [
-        Service(x) for x in client.services.list() if x.name.startswith(stack_name + "_")
+        Service(x) for x in client.services.list() if x.name.startswith(stack_name + "_") or x.name == stack_name
     ]
 
     bar = progress.bar.Bar("Deploying", max=len(services))
